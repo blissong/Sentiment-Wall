@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Live Sentiment Wall</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#12161c;--mut:#667085;--line:#e2e5ea;--acc:#0a7d6b;--acc2:#0b5cff;--btn:#eef1f5}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0c0f14;--card:#151a22;--tx:#eef1f5;--mut:#9aa4b2;--line:#262d38;--acc:#2dd4b0;--acc2:#6ea0ff;--btn:#1d2430}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
+.wrap{max-width:980px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px}
+.tag{font-size:13px;color:var(--mut)}
+h1{font-size:clamp(22px,4vw,34px);line-height:1.2;margin:6px 0 0}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chip,.btn{padding:10px 14px;border-radius:999px;border:1px solid var(--line);background:var(--btn);color:var(--tx);font:500 15px inherit;cursor:pointer}
+.btn{border-radius:10px;font-weight:600}
+.chip.on{background:var(--acc2);border-color:var(--acc2);color:#fff}
+.scale{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
+.scale button{padding:16px 4px;border-radius:12px;border:1px solid var(--line);background:var(--btn);color:var(--tx);font:600 13px inherit;cursor:pointer}
+.scale button b{display:block;font-size:24px;margin-bottom:4px}
+.scale button.mine{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.note{color:var(--mut);font-size:14px;margin:10px 0 0}
+.big{display:flex;gap:32px;align-items:flex-end;flex-wrap:wrap}
+.num{font-size:clamp(56px,12vw,112px);font-weight:800;line-height:1;color:var(--acc)}
+.dist{display:flex;gap:10px;align-items:flex-end;height:170px;margin-top:16px}
+.dist div{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;font-size:13px;color:var(--mut);text-align:center}
+.dist i{display:block;width:100%;background:var(--acc2);border-radius:8px 8px 0 0;min-height:2px;transition:height .5s}
+.row,.axis{display:grid;grid-template-columns:150px 1fr 80px;gap:12px;align-items:center}
+.row{margin:10px 0;font-size:15px}
+.axis{font-size:12px;color:var(--mut)}.axis div{display:flex;justify-content:space-between}
+.track{position:relative;height:12px;border-radius:6px;background:var(--btn)}
+.track i{position:absolute;top:-3px;width:18px;height:18px;border-radius:50%;background:var(--acc);transform:translateX(-50%);transition:left .5s}
+.row span:last-child{text-align:right;color:var(--mut)}
+input[type=text]{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font:inherit;margin-top:12px}
+.ctl{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.qi{display:flex;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.qi span{flex:1}.qi.cur span{color:var(--acc);font-weight:600}
+.qi .btn{padding:8px 12px;font-size:14px}
+.live{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--acc);margin-right:6px;animation:p 1.4s infinite}
+@keyframes p{50%{opacity:.3}}
+@media(max-width:560px){.row,.axis{grid-template-columns:100px 1fr 64px}}
+@media(prefers-reduced-motion:reduce){.live{animation:none}.dist i,.track i{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ATTENDEE VIEW (phones) -->
+  <section id="vote">
+    <div class="card"><div class="tag">Live question</div><h1 class="q">Connecting…</h1></div>
+    <div class="card"><div class="tag">Step 1: Which sector do you represent?</div><div class="chips" id="sectors"></div></div>
+    <div class="card"><div class="tag">Step 2: Where do you stand?</div><div class="scale" id="scale"></div><p class="note" id="vnote"></p></div>
+  </section>
+
+  <!-- PRESENTER VIEW (open this page with #wall on the end of the link) -->
+  <section id="wall" hidden>
+    <div class="card">
+      <div class="tag"><span class="live"></span>Live sentiment · <span id="count">0</span> votes</div>
+      <h1 class="q"></h1>
+      <div class="big">
+        <div><div class="num" id="avg">–</div><div class="note">average (1 = strongly disagree, 5 = strongly agree)</div></div>
+        <div><div class="num" id="pct" style="color:var(--acc2)">–</div><div class="note">agree or strongly agree</div></div>
+      </div>
+      <div class="dist" id="dist"></div>
+    </div>
+    <div class="card">
+      <div class="tag">Sentiment by sector</div>
+      <div class="axis"><span></span><div><span>Disagree</span><span>Agree</span></div><span></span></div>
+      <div id="bysector"></div>
+    </div>
+    <div class="card">
+      <div class="tag">Presenter controls</div>
+      <div id="signin"><p class="note">Sign in with the presenter’s Google account to manage questions.</p><div class="ctl"><button class="btn" id="gsign">Sign in with Google</button></div></div>
+      <div id="admin" hidden>
+        <div id="qlist"></div>
+        <input type="text" id="newq" placeholder="Type a new question…">
+        <div class="ctl"><button class="btn" id="addq">Add question</button><button class="btn" id="clearv">Clear votes for live question</button><button class="btn" id="out">Sign out</button></div>
+      </div>
+      <div class="ctl"><button class="btn" id="sim">Add demo crowd (this screen only)</button><button class="btn" id="clr">Clear demo</button></div>
+      <p class="note" id="msg"></p>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,onAuthStateChanged,signInAnonymously,signInWithPopup,GoogleAuthProvider,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,doc,collection,onSnapshot,setDoc,addDoc,getDoc,getDocs,deleteDoc,query,where,orderBy} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ---- Edit these ----
+const firebaseConfig = {
+  apiKey: "AIzaSyDmEyxKJNvU8FOzxOI9nuPOqEI5KJedjOI",
+  authDomain: "live-sentiment-wall.firebaseapp.com",
+  projectId: "live-sentiment-wall",
+  storageBucket: "live-sentiment-wall.firebasestorage.app",
+  messagingSenderId: "68536651693",
+  appId: "1:68536651693:web:29f0374d6ce38a368f9b24"
+};
+const ADMIN_EMAIL = "blissong7@gmail.com";
+const SECTORS = ["Government","Finance & Banking","Technology","Healthcare","Energy & Industry","Media & Creative","Professional Services","Other"];
+const LABELS = ["Strongly disagree","Disagree","Neutral","Agree","Strongly agree"];
+// --------------------
+
+const $ = id => document.getElementById(id);
+const app = initializeApp(firebaseConfig), auth = getAuth(app), fs = getFirestore(app);
+let uid=null, isAdmin=false, cur=null, qs=[], votes=[], demo=[], sector=null, myScore=null;
+let unsubVotes=null, watchedQ=null, unsubQs=null;
+
+const view = () => location.hash === "#wall" ? "wall" : "vote";
+function show(){ $("vote").hidden = view()!=="vote"; $("wall").hidden = view()!=="wall"; watchVotes(); render(); }
+addEventListener("hashchange", show);
+
+SECTORS.forEach(s => { const b=document.createElement("button"); b.className="chip"; b.textContent=s;
+  b.onclick=()=>{ sector=s; [...$("sectors").children].forEach(c=>c.className="chip"+(c.textContent===s?" on":"")); render(); };
+  $("sectors").appendChild(b); });
+LABELS.forEach((l,i) => { const b=document.createElement("button"); b.innerHTML="<b>"+(i+1)+"</b>"+l; b.onclick=()=>cast(i+1); $("scale").appendChild(b); });
+
+// Sign in: attendees get an anonymous ID automatically
+onAuthStateChanged(auth, u => {
+  if (!u) { signInAnonymously(auth).catch(e => say("Couldn’t connect: "+e.code)); return; }
+  uid = u.uid; isAdmin = !!u.email && u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  $("signin").hidden = isAdmin; $("admin").hidden = !isAdmin;
+  if (isAdmin && !unsubQs) {
+    unsubQs = onSnapshot(query(collection(fs,"questions"), orderBy("order")), s => { qs = s.docs.map(d=>({id:d.id,...d.data()})); renderQs(); }, e => say("Couldn’t load questions: "+e.code));
+  }
+  if (!isAdmin && unsubQs) { unsubQs(); unsubQs=null; qs=[]; }
+  loadMine(); render();
+});
+onSnapshot(doc(fs,"state","current"), s => { cur = s.exists() ? s.data() : null; myScore=null; loadMine(); watchVotes(); render(); },
+  e => say("Couldn’t read the live question: "+e.code));
+
+async function loadMine(){
+  if (!cur || !uid) return;
+  try { const s = await getDoc(doc(fs,"votes",cur.qid+"_"+uid)); myScore = s.exists() ? s.data().score : null; render(); } catch(e){}
+}
+function watchVotes(){
+  const q = view()==="wall" && cur ? cur.qid : null;
+  if (q === watchedQ) return;
+  if (unsubVotes) { unsubVotes(); unsubVotes=null; }
+  votes = []; watchedQ = q;
+  if (q) unsubVotes = onSnapshot(query(collection(fs,"votes"), where("qid","==",q)), s => { votes = s.docs.map(d=>d.data()); render(); }, e => say("Couldn’t load votes: "+e.code));
+}
+
+async function cast(score){
+  if (!cur) return;
+  if (!sector) { $("vnote").textContent = "Please choose your sector first."; return; }
+  try { await setDoc(doc(fs,"votes",cur.qid+"_"+uid), {qid:cur.qid, uid, sector, score, t:Date.now()}); myScore = score; render(); }
+  catch(e){ $("vnote").textContent = "Couldn’t save your vote. Please try again."; }
+}
+
+function say(t){ $("msg").textContent = t; }
+function esc(s){ const d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
+
+function render(){
+  const text = cur ? cur.text : "Waiting for the host to start the first question…";
+  document.querySelectorAll(".q").forEach(e => e.textContent = text);
+  [...$("scale").children].forEach((b,i) => { b.disabled = !cur; b.className = myScore===i+1 ? "mine" : ""; });
+  const vn = $("vnote");
+  if (myScore) vn.textContent = "Vote recorded: “"+LABELS[myScore-1]+"”. You can change it until the host moves on.";
+  else if (!vn.textContent.startsWith("Please") && !vn.textContent.startsWith("Couldn")) vn.textContent = "";
+  if (view()!=="wall") return;
+
+  const all = votes.concat(demo), n = all.length;
+  $("count").textContent = n;
+  $("avg").textContent = n ? (all.reduce((a,v)=>a+v.score,0)/n).toFixed(1) : "–";
+  $("pct").textContent = n ? Math.round(100*all.filter(v=>v.score>=4).length/n)+"%" : "–";
+  const c=[0,0,0,0,0]; all.forEach(v=>c[v.score-1]++); const mx=Math.max(1,...c);
+  $("dist").innerHTML = c.map((k,i)=>"<div>"+k+"<i style='height:"+(k/mx*120)+"px'></i>"+LABELS[i]+"</div>").join("");
+  $("bysector").innerHTML = SECTORS.map(s => {
+    const g=all.filter(v=>v.sector===s), a=g.length?g.reduce((x,v)=>x+v.score,0)/g.length:null;
+    return "<div class='row'><span>"+esc(s)+"</span><div class='track'>"+(a?"<i style='left:"+((a-1)/4*100)+"%'></i>":"")+"</div><span>"+(a?a.toFixed(1)+" · n="+g.length:"–")+"</span></div>";
+  }).join("");
+  renderQs();
+}
+
+function renderQs(){
+  const box=$("qlist"); box.textContent="";
+  qs.forEach(q => {
+    const r=document.createElement("div"); const live = cur && cur.qid===q.id; r.className="qi"+(live?" cur":"");
+    const s=document.createElement("span"); s.textContent=q.text+(live?"  (live now)":""); r.appendChild(s);
+    const l=document.createElement("button"); l.className="btn"; l.textContent="Launch"; l.onclick=()=>launch(q);
+    const d=document.createElement("button"); d.className="btn"; d.textContent="Delete"; d.onclick=()=>delQ(q.id);
+    r.append(l,d); box.appendChild(r);
+  });
+  if (!qs.length) box.textContent = "No questions yet. Add one below.";
+}
+const launch = q => setDoc(doc(fs,"state","current"), {qid:q.id, text:q.text}).catch(e=>say("Couldn’t launch: "+e.code));
+const delQ = id => deleteDoc(doc(fs,"questions",id)).catch(e=>say("Couldn’t delete: "+e.code));
+
+$("addq").onclick = async () => { const t=$("newq").value.trim(); if(!t) return;
+  try { await addDoc(collection(fs,"questions"), {text:t, order:Date.now()}); $("newq").value=""; } catch(e){ say("Couldn’t add: "+e.code); } };
+$("clearv").onclick = async () => { if(!cur || !confirm("Delete all votes for the live question?")) return;
+  try { const s=await getDocs(query(collection(fs,"votes"), where("qid","==",cur.qid))); await Promise.all(s.docs.map(d=>deleteDoc(d.ref))); } catch(e){ say("Couldn’t clear: "+e.code); } };
+$("gsign").onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => say("Sign-in failed: "+e.code+". If it mentions an unauthorized domain, add this site under Authentication > Settings > Authorized domains."));
+$("out").onclick = () => signOut(auth);
+$("sim").onclick = () => { const bias={}; SECTORS.forEach(s=>bias[s]=1+Math.random()*3);
+  for(let i=0;i<40;i++){ const s=SECTORS[Math.floor(Math.random()*SECTORS.length)];
+    demo.push({sector:s, score:Math.max(1,Math.min(5,Math.round(bias[s]+(Math.random()*2-1)*1.2)))}); } render(); };
+$("clr").onclick = () => { demo=[]; render(); };
+
+show();
+</script>
+</body>
+</html>
